@@ -1,0 +1,244 @@
+---
+title: "Simulate DiD data"
+---
+
+```{r}
+library(tidyverse)
+```
+
+This paper simulate diff in dif data where patients at clinics get treated at the clinic level.
+
+```{r}
+source("../staggered-adoption-simstudy/fun-gen-params-2.R")
+source("../staggered-adoption-simstudy/fun-gendata-3.R")
+source("../staggered-adoption-simstudy/fun-methods.R")
+```
+
+We evaluated the methods on various simulation scenarios in which we varied the total number
+of clusters, sample size, and the effect of exposure on the outcome. 
+
+* The total sample sizes in the scenarios were **500**, 1000, 2000, and 5000. 
+
+* The number of clusters also changed within each setting and was equal to **30**, 50, and 100. 
+
+* The number of individuals per cluster was equally distributed. 
+
+The effect of exposure on the outcome was modeled under three scenarios:
+* constant (no heterogeneity), 
+* lagged (temporal heterogeneity), 
+* and heterogeneity by both group and time. 
+
+The total number of time points was set to t = 5, and we enforced that each cluster start the intervention between periods 3 and 5, i.e. Gg = 0 for g = 1, 2. 
+
+Hence, there were no never-treated units and two observed periods with no intervention effect.
+
+We generated five covariates in total, three at the individual level and two at the cluster level.
+Among the three individual covariates, two were continuous and one binary. 
+
+These were meant to resemble our motivating example, in which the individual-level covariates are age, a frailty
+score, and sex. 
+
+The cluster-level covariates consisted of one categorical covariate with 3 levels and one binary covariate. 
+
+Similarly, these covariates were meant to mimic clinic characteristics such as type of practice, and whether the clinic is located in an urban or rural area.
+
+    # --- -- mu.t: vector of length equal to time.periods, time effects under no treatment
+    # --- -- rho.t: vector of length equal to time.periods, time effects under treatment 
+
+```{r}
+n_participants <- 500
+```
+
+
+```{r}
+# [1] "id"        "t"         "eps"       "nu"        "Y0"        "Y1"        "Y"         "Yg1"       "Yg2"       "Yg3"       "Yg4"       "Yg5"      
+# [13] "treat"     "Gt"        "C"         "prtrt1"    "prtrt2"    "prtrt3"    "prtrt4"    "prtrt5"    "X1"        "X2"        "X3"        "X4"       
+# [25] "V1"        "V2"        "V3"        "V4"        "V5"        "V6"        "I_1"       "I_2"       "I_3"       "I_4"       "I_5"       "I_6"      
+# [37] "I_7"       "I_8"       "I_9"       "I_10"      "I_11"      "I_12"      "I_13"      "I_14"      "I_15"      "I_16"      "I_17"      "I_18"     
+# [49] "I_19"      "I_20"      "I_21"      "I_22"      "I_23"      "I_24"      "I_25"      "I_26"      "I_27"      "I_28"      "I_29"      "I_30"     
+# [61] "Gt_f"      "Gt_t"      "Gt_t_f"    "t_f"       "dist"      "label_dis" "label"     "dist_f"    "label_f
+```
+
+
+# Scenario 0: zero treatment effect, 30 clusters
+
+In this scenario, we have 30 clusters (clinics), with total 500 participants. 
+We have random effects by cluster. This is the psi.
+
+We have 2 periods of pre-treatment. Cluster level covariates.
+
+There is NO treatment effect.
+
+participants cannot switch clusters.
+
+```{r}
+set.seed(123)
+
+scen_params <- gen_params(scen = 0, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_line() +
+  geom_line(aes(y = treat*10-30, group = id), col = "blue")
+```
+If we would fit a fixed effect model we expect zero treatment effect.
+
+```{r}
+res$long_dat %>%
+  group_by(treat, t) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+
+
+
+# Scenario 1: constant treatment effect, single cluster
+
+A single cluster. Constant treatment effect. All participants get treated t the same time.
+
+```{r}
+set.seed(123)
+
+scen_params <- gen_params(scen = 1, np = n_participants)
+res <- gen.data.cluster(scen_params)
+
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_line() +
+  geom_line(aes(y = treat*10, group = id), col = "blue")
+```
+```{r}
+res$long_dat %>%
+  group_by(treat, C) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+```{r}
+lm(Y ~ factor(t), data = res$long_dat)
+```
+
+# Scenario 2: time lagged treatment effect, single cluster
+
+A single cluster. This particular cluster happens to get treated at T = 5 (seed 123).
+What does time lag mean? 
+
+```{r}
+set.seed(145)
+
+scen_params <- gen_params(scen = 2, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_line() +
+  geom_line(aes(y = treat*10, group = id), col = "blue")
+```
+```{r}
+res$long_dat %>%
+  group_by(treat, C) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+So 2/3 of 2.
+
+# Scenario 3 group-time heterogeneity, single cluster
+
+There is only 1 group. effect increases in time.
+
+```{r}
+set.seed(145)
+
+scen_params <- gen_params(scen = 3, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_line() +
+  geom_line(aes(y = treat*10, group = id), col = "blue")
+```
+```{r}
+res$long_dat %>%
+  group_by(treat, C, t) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+
+# Scenario 4: only group heterogeneity, single cluster
+
+With a single cluster, group heterogeneity is meaninglesS? For this cluster, treatment effect is 1.
+
+```{r}
+set.seed(145)
+
+scen_params <- gen_params(scen = 4, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_line() +
+  geom_line(aes(y = treat*10, group = id), col = "blue")
+```
+
+```{r}
+res$long_dat %>%
+  group_by(treat, C, t) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+
+# Scenario 5: constant treatment effect, ten clusters
+
+```{r}
+set.seed(123)
+
+scen_params <- gen_params(scen = 5, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_point(aes(y=Y0)) +
+  geom_point(aes(y=Y1, shape=factor(treat))) +
+  geom_line() +
+  geom_line(aes(y = treat*10-25, group = id), col = "blue")
+```
+lets calculate the constant treatment effect from Y1 Y0.
+
+```{r}
+res$long_dat %>%
+  group_by(treat, C) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n())
+
+```
+

@@ -1,0 +1,189 @@
+---
+title: "Simulating Diff in diff data using the R package simDAG"
+format: html
+editor: visual
+---
+
+## Sim DAG
+
+```{r}
+library("simDAG")
+dag <- empty_dag() +
+  node(c("A", "B"), type="rnorm", mean=0, sd=1) +
+  node("C", type="gaussian", formula=~-2 + A*0.3 + B*-2,
+       error=1)
+```
+
+```{r}
+library("igraph")
+library("ggplot2")
+library("ggforce")
+plot(dag, layout="as_tree", node_size=0.15, node_fill="grey",
+     node_text_fontface="italic")
+```
+
+```{r}
+summary(dag)
+```
+
+```{r}
+library(tidyverse)
+set.seed(123)
+dt <- sim_from_dag(dag, n_sim = 100)
+
+dt$Bb <- if_else(dt$B < 0, "red", "blue")
+```
+
+```{r}
+ggplot(dt, aes(x = A, y = C, col = Bb)) + geom_point() + scale_colour_identity()
+```
+
+# Introducing multiple time points
+
+```{r}
+dag <- empty_dag() +
+  node_td("Y", type="time_to_event", prob_fun=0.01,
+          event_duration=Inf)
+
+```
+
+```{r}
+sim <- sim_discrete_time(dag, n_sim=1000, max_t=80)
+```
+
+What is the probability that the event has not occured at t = 80 ?
+
+This is (0.99)\^ 80
+
+```{r}
+0.99^80
+```
+
+So we expect on average 45% persons with event FALSE, and 55% persons with event TRUE.
+
+```{r}
+mean(sim$data$Y_event)
+```
+
+# Time varyi
+
+```{r}
+prob_myoc <- function(data, P_0, RR_A) {
+  ifelse(data$A_event, P_0*RR_A, P_0)
+}
+
+dag <- empty_dag() +
+  node_td("A", type="time_to_event", prob_fun=0.01,
+          event_duration=20, immunity_duration=150) +
+  node_td("Y", type="time_to_event", prob_fun=prob_myoc,
+          parents=c("A_event"), P_0=0.005, RR_A=3.24)
+```
+
+```{r}
+plot(dag)
+```
+
+```{r}
+sim <- sim_discrete_time(dag, n_sim=10000, max_t=365*2)
+```
+
+```{r}
+set.seed(123)
+dat_ss <- sim2data(sim, to="start_stop", target_event="Y",
+                keep_only_first=FALSE, overlap=TRUE)  # If TRUE, all information after the first event per person will be discarded. Useful when target_event should be treated as a terminal variable.
+```
+
+```{r}
+dat_ss %>% filter(.id ==1)
+```
+
+So what we have here? A base probability of getting vaccinated
+
+```{r}
+# > head(dat) %>% filter(.id == 1)
+#      .id start  stop      A      Y
+#    <int> <int> <num> <lgcl> <lgcl>
+# 1:     1     1   183  FALSE   TRUE
+# 2:     1   183   225  FALSE   TRUE
+# 3:     1   225   230  FALSE   TRUE
+# 4:     1   230   264  FALSE   TRUE
+# 5:     1   264   534  FALSE  FALSE
+# 6:     1   534   554   TRUE  FALSE
+```
+
+```{r}
+set.seed(123)
+dat <- sim2data(sim, to="long") 
+```
+
+```{r}
+dat %>% filter(.id ==1 & .time == 54) 
+dat %>% filter(.id ==1 & .time == 293)
+
+```
+
+Great it matches.
+
+```{r}
+ggplot(dat %>% filter(.id ==1), aes(x = .time, y = A)) +geom_point()
+```
+
+So we expect that after A occurs (a person is risk elevated due to vaccination the first 20 days), the prob of the event is increased three fold.
+
+So we can check this by subsetting the data on A==1, and checking the prob of Y in that period, compared to prob of Y otherwise.
+
+There is also the immunity though, but that is immunity to vaccination, not to getting myoc.
+
+```{r}
+res <- dat %>%
+  group_by(A) %>%
+  summarise(P_Y = mean(Y))
+
+
+RR_A_est <- res$P_Y[2]/res$P_Y[1]
+RR_A_est
+```
+
+```{r}
+res
+```
+
+```{r}
+mean(dat$Y)
+```
+
+```{r}
+res_t <- dat %>%
+  group_by(.time) %>%
+  summarise(P_A = mean(A),
+            P_Y = mean(Y))
+
+
+```
+
+```{r}
+t =0;for( i in 1:20 ){ t = t + (0.01 - i*0.0001)}
+```
+
+```{r}
+ggplot(res_t %>% filter(.time < 20), aes(x = .time, y = P_A)) +
+  geom_point() +
+  geom_point(aes (y = P_Y), col = "blue") +
+  geom_hline(aes(yintercept = mean(dat$Y)), col = "red") +
+  geom_abline(aes(slope = 0.01, intercept = 0)) +
+  geom_hline(aes(yintercept = t), col = "purple") #+
+  #geom_vline(aes(xintercept = 20), col = "red") +
+  #geom_vline(aes(xintercept = 150), col = "blue")
+```
+
+So what happens here? We have the base prob of getting vaccinated at 0.01. Because we have a duration of 20, we have a buildup to around 0.01 x 20. However at day 20, only 80 not vaccinated indiv are left. so the buildup slows down a bit
+
+0.1 + 0.099 + 0.098 + 0.097 + 0.096 + 0.095
+
+# What if we want data at multiple points in time?
+
+# Actual DID datasets
+
+Card and Krueger.
+
+Medicaid expansion.
