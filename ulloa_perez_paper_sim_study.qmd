@@ -75,6 +75,7 @@ participants cannot switch clusters.
 set.seed(123)
 
 scen_params <- gen_params(scen = 0, np = n_participants)
+
 res <- gen.data.cluster(scen_params)
 pat_ids <- sample(1:n_participants, 10)
 ```
@@ -242,3 +243,137 @@ res$long_dat %>%
 
 ```
 
+# Scenario 8: group heterogeneity, ten clusters
+
+Group heterogeneity means groups that start at t=3 effect 1, t=4 effect 2, t=5 effect 3.
+
+```{r}
+set.seed(123)
+
+scen_params <- gen_params(scen = 8, np = n_participants)
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+```{r}
+ggplot(res$long_dat %>% filter(id %in% pat_ids), aes(x = t, y = Y, col = factor(C), group = id)) +
+  
+  geom_point() +
+  geom_point(aes(y=Y0)) +
+  geom_point(aes(y=Y1, shape=factor(treat))) +
+  geom_line() +
+  geom_line(aes(y = treat*10-25, group = id,  col = factor(C)))
+```
+lets calculate the constant treatment effect from Y1 Y0.
+
+```{r}
+ eff <- res$long_dat %>%
+  group_by(treat, C, t) %>%
+  summarise(avg_t = mean(Y1-Y0),
+            n_obs = n()) %>%
+  arrange(C)
+
+ggplot(eff %>% filter(treat ==1), aes(x = reorder(factor(C), avg_t), y = avg_t)) +
+  geom_point() +
+  coord_flip()
+```
+
+
+# Lets inspect the simulated data a bit more
+What about the covariates X1-X4?
+
+X1 is always 1. X2 is binary 52% 1. X3 is normally distributed. X4 is also normally dist.
+
+mc is N(5,4). nuc is N(5,1)
+
+```{r}
+ covars <- res$long_dat %>%
+  group_by(C) %>%
+  summarise(avg_X3 = mean(X3), # round() gedaan?
+            avg_X4 = mean(X4),
+            avg_X2 = mean(X2),
+            n_obs = n()) %>%
+  arrange(C)
+
+
+hist(covars$avg_X3)
+
+hist(covars$avg_X4) # N(5,1)
+sd(covars$avg_X4) 
+```
+
+# Scenario 30: And what about the cluster level covariates V
+
+
+We use scenario 30, this generates data for many clusters (providers).
+
+```{r}
+set.seed(123)
+source("../staggered-adoption-simstudy/fun-gen-params-2.R")
+scen_params <- gen_params(scen = 20, np = n_participants*2)
+
+res <- gen.data.cluster(scen_params)
+pat_ids <- sample(1:n_participants, 10)
+```
+
+Probabilities of WHEN to entering the payment program depend on the provider.
+There is a categorical variable "Type of provider"  that can assume three values.
+This is generated from a multinomial distribution.
+There is also a binary variable rural yes no.
+
+  # --- -- V: array of matrices. For each t, V[,,t] contains cluster level information at time t 
+  #           each element in the array is a matrix of nrow = number of clusters, ncol = number of cluster covariates 
+  #           the first covariate is the intercept, the last covariate corresponds to urban rural, 
+  #           values in between are the categories of the multinomial
+  
+  
+ 
+  
+  V1  intercept always 1
+  
+  
+  
+  V2 V3 V4 V5 . type of clinic.(X4)
+  V5 is always zero. 
+  
+  V6 urban / rural. (X5)
+  
+  Table 8 and table 9 are also interesting. 
+  
+  Looks like table 8 is just the result of the ingredients of the simulation.
+  
+  Table 9 combined with the simulated values of X4 () and X5 generate , for a cluster , the actual time period of entry into treatment.
+  
+```{r}
+res$long_dat %>%
+  group_by(C, prtrt1, prtrt2, prtrt3, prtrt4,prtrt5, V1,V2,V3,V4,V5,V6, Gt_f) %>% # these are Ck in the paper
+  summarise(avg_T = mean(treat)) %>%
+  ungroup() %>%
+  summarise(X4_p3= mean(V2), # exp 0.4
+            X4_p4=mean(V3), # exp 0.3
+            X4_p5=mean(V4), # exp 0.3
+            X5=mean(V6), # exp 0.7
+            n_clust = n())
+```
+```{r}
+providers <- res$long_dat %>%
+  group_by(C, prtrt1, prtrt2, prtrt3, prtrt4,prtrt5, V1,V2,V3,V4,V5,V6, Gt_f) %>% # these are Ck in the paper
+  summarise(avg_T = mean(treat)) %>%
+  mutate(dna = paste0(V2, V3, V4, V6)) %>%
+  mutate(Gt_f = as.integer(as.character(Gt_f)))
+```
+  
+```{r}
+ggplot(providers, aes(x = factor(dna), fill = factor(Gt_f))) +
+  geom_bar() +
+  facet_wrap(~V6)
+```
+
+```{r}
+summary(lm(as.integer(Gt_f) ~ V3 + V6, data = providers))
+```
+```{r}
+summary(lm(prtrt5 ~ V2 + V3 + V6, data = providers))
+```
+  
+  
